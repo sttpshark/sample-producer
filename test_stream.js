@@ -94,3 +94,39 @@ function arangeTime(input) {
 
 
 loop1();
+
+// Dynamic key isn't working, get the following errors when value is array / object respectively:
+// com.fasterxml.jackson.databind.JsonMappingException: Can not deserialize instance of java.lang.String out of START_ARRAY token
+// com.fasterxml.jackson.databind.JsonMappingException: Can not deserialize instance of java.lang.String out of START_OBJECT token
+
+// Sample Payload Below:
+/*
+{
+    ID: '99999',
+    Date: '1/7/2021',
+    Time: '12:13:36.467',
+    Status: '00 00',
+    Frequency: '59.998001',
+    'df/dt': '0',
+    'B345_BUSA_VS Magnitude': '356953.7188',
+    'B345_BUSA_VS Angle': '-179.048752',
+    'B345_BUSB_VS Magnitude': '356592.6563',
+    'B345_BUSB_VS Angle': '-179.020111',
+    'T115_T1X_VS Magnitude': '117967.8984',
+    'T115_T1X_VS Angle': '-170.918472',
+    'T115_T2X_VS Magnitude': '118449.3359',
+    'T115_T2X_VS Angle': '177.662476',
+    'L345_3165_IS Magnitude': '227.969467',
+    'L345_3165_IS Angle': '-130.18692',
+    'L345_3619_IS Magnitude': '230.71608',
+    'L345_3619_IS Angle': '-131.470337',
+    'L345_3280_IS Magnitude': '499.884827',
+    'L345_3280_IS Angle': '-155.59758',
+    'L345_3921_IS Magnitude': '501.715912',
+    'L345_3921_IS Angle': '-155.379868',
+    'T115_T1X_IS Magnitude': '2026.089966',
+    'T115_T1X_IS Angle': '-172.05867',
+    'T115_T2X_IS Magnitude': '798.350891',
+    'T115_T2X_IS Angle': '-3.323437'
+  }
+  */
