@@ -1,0 +1,28 @@
+{
+  "name": "aws-local",
+  "version": "1.0.0",
+  "description": "local instance of aws kinesis",
+  "main": "stream.js",
+  "dependencies": {
+    "aws-kcl": "^2.1.0",
+    "aws-sdk": "^2.831.0",
+    "csvtojson": "^2.0.10",
+    "dynalite": "^3.2.1",
+    "kinesalite": "^3.3.3",
+    "line-reader": "^0.4.0",
+    "log4js": "^6.3.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sttpshark/aws-local.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/sttpshark/aws-local/issues"
+  },
+  "homepage": "https://github.com/sttpshark/aws-local#readme"
+}
