@@ -1,14 +1,7 @@
 const AWS = require('aws-sdk');
-const csv = require('csvtojson');
+// const csv = require('csvtojson');
 const csvFilePath = './ex.csv';
 
-// @TODO:
-// dynamic field = [keyslist, phasorList]
-// dynamic field is static, defined in Kinesis Message Model
-// in DynamoSchema, take dynamic, parse it, use keys for database keys and values as the values
-
-// for sRATE, compute before kinesis stream and send along
-// for gpsLock and error, can either do that before or after
 AWS.config.update(
     {
         region: "us-east-1"
@@ -18,38 +11,91 @@ AWS.config.update(
 var fs = require('fs');
 let kinesis = new AWS.Kinesis()
 
+// read csv file using fs and go through file line by line
 var fileContents = fs.readFileSync(csvFilePath);
 var lines = fileContents.toString().split('\n');
 
-for (var i = 1; i < 3; i++) {
-    row = lines[i].split(',');
+// calculate the sample rate by taking difference b/t timestamp of two consecutive rows 
+// and taking recipricol
+for (var z = 1; z < 3; z++) {
+    let row = lines[z].split(',');
     // console.log(getTimeStamp(row[2] + ' ' + row[3]));
-    if (i == 1) {
+    if (z == 1) {
         // console.log(row[2]);
         time1 = getTimeStamp(row[2] + ' ' + row[3]) 
-    } else if (i == 2) {
+    } else if (z == 2) {
         // console.log(row[2]);
         time2 = getTimeStamp(row[2] + ' ' + row[3])
     }
 }
-israte = 1 / (time2 - time1) * 1000
-srate = 2 * Math.round(israte / 2)
+let israte = 1 / (time2 - time1) * 1000
+let srate = 2 * Math.round(israte / 2)
 
+// loops through last two rows of small sample file
+// adjust conditions when using large sample file
+// see comments at bottom for an example payload to kinesis
 let loop1 = () => {
-    i = 0
-    var header = lines[0];
+    // i = 0
+    let keys = lines[0].split(",");
     for (var i = 1; i < 3; i++) {
-        row = lines[i].split(',');
-        parameters = {
+        let row = lines[i].split(',');
+        let parameters = {
             Data: JSON.stringify({
-                // ID: 99999,
                 ID: row[0],
+                // converting data and time to unix time happens in connector
                 Date: arangeTime(row[2]),
                 Time: row[3],
+                // converting status to gpsLock and error happens on publisher side
                 Status: row[4],
+                // Status returns 0 if gpsLock is on, but for our schema 1 means gpsLock is on, hence the XOR
+                gpsLock: hex2bin(row[4].replace(/\s/g, ""))[13] ^ 1,      
+                error: hex2bin(row[4].replace(/\s/g, ""))[14],
                 Frequency: row[5],
+                // calculating sRate happens on publisher side
                 sRate: srate,
-                // Dynamic: [header[7], row[7], row[8]]
+                dfdt: row[6],
+                Phasors: JSON.stringify({
+                    [keys[7].split(' ')[0]]: {
+                        mag: row[7],
+                        angle: row[8]
+                    },
+                    [keys[9].split(' ')[0]]: {
+                        mag: row[9],
+                        angle: row[10]
+                    },
+                    [keys[11].split(' ')[0]]: {
+                        mag: row[11],
+                        angle: row[12]
+                    },
+                    [keys[13].split(' ')[0]]: {
+                        mag: row[13],
+                        angle: row[14]
+                    },
+                    [keys[15].split(' ')[0]]: {
+                        mag: row[15],
+                        angle: row[16]
+                    },
+                    [keys[17].split(' ')[0]]: {
+                        mag: row[17],
+                        angle: row[18]
+                    },
+                    [keys[19].split(' ')[0]]: {
+                        mag: row[19],
+                        angle: row[20]
+                    },
+                    [keys[21].split(' ')[0]]: {
+                        mag: row[21],
+                        angle: row[22]
+                    },
+                    [keys[23].split(' ')[0]]: {
+                        mag: row[23],
+                        angle: row[24]
+                    },
+                    [keys[25].split(' ')[0]]: {
+                        mag: row[25],
+                        angle: row[26]
+                    }
+                })
             }), 
             PartitionKey: "key" + toString(i),
             StreamName: "teststream"
@@ -67,6 +113,7 @@ let loop1 = () => {
     }
 }
 
+// used for calculating sample rate, used date and time and returns unix time
 function getTimeStamp(input) {
     var parts = input.trim().split(' ');
     var date = parts[0].split('/');
@@ -77,8 +124,9 @@ function getTimeStamp(input) {
     return d.getTime();
 }
 
+// formats date properly to be processed in connector
 function arangeTime(input) {
-    // 1/7/2021 to 2021-01-07
+    // ex: 1/7/2021 to 2021-01-07
     var parts = input.trim().split('/');
     var month = null;
     var day = null;
@@ -91,13 +139,44 @@ function arangeTime(input) {
     return parts[2].concat("-",month,"-",day)
 }
 
+// converts hex of status to 16 bit binary string for proper processing
+function hex2bin(hex){
+    let binStr = hex.toString(2);
 
+    while(binStr.length < 16) {
+        binStr = "0" + binStr;
+    }
+    return binStr
+}
 
 loop1();
 
-// Dynamic key isn't working, get the following errors when value is array / object respectively:
-// com.fasterxml.jackson.databind.JsonMappingException: Can not deserialize instance of java.lang.String out of START_ARRAY token
-// com.fasterxml.jackson.databind.JsonMappingException: Can not deserialize instance of java.lang.String out of START_OBJECT token
+// The digits in the status column are HEX numbers. Each “0” is corresponding to four binary “0”. 
+// In other words, the number of attributes are not only 5. There are 16 attributes according to the protocol standard IEEE C37.118-2005
+
+// The meaning of the binary code is defined below:  C37.118-2005
+
+// STAT              2 bytes             Bitmapped flags (0-15, totally 16 bits).
+
+// Bit 15: Data valid, 0 when PMU data is valid, 1 when invalid or PMU is in test mode.
+// Bit 14: PMU error including configuration error, 0 when no error.
+// Bit 13: PMU sync, 0 when in sync (GPS locked)
+// Bit 12: Data sorting, 0 by time stamp, 1 by arrival.
+// Bit 11: PMU trigger detected, 0 when no trigger.
+// Bit 10: Configuration changed, set to 1 for 1 min when configuration changed.
+// Bits 09–06: Reserved for security, presently set to 0.
+// Bits 05–04: Unlocked time: 00 = sync locked, best quality
+        // **01 = Unlocked for 10 s
+        // **10 = Unlocked for 100 s
+        // **11 = Unlocked over 1000 s
+// Bits 03–00: Trigger reason:
+        // **1111–1000: Available for user definition
+        // **0111: Digital 0110: Reserved
+        // **0101: df/dt high 0100: Frequency high/low
+        // **0011: Phase-angle diff 0010: Magnitude high
+        // **0001: Magnitude low 0000: Manual
+
+
 
 // Sample Payload Below:
 /*
@@ -106,27 +185,20 @@ loop1();
     Date: '1/7/2021',
     Time: '12:13:36.467',
     Status: '00 00',
+    gpsLock: 1/0,
+    error: 1/0,
     Frequency: '59.998001',
     'df/dt': '0',
-    'B345_BUSA_VS Magnitude': '356953.7188',
-    'B345_BUSA_VS Angle': '-179.048752',
-    'B345_BUSB_VS Magnitude': '356592.6563',
-    'B345_BUSB_VS Angle': '-179.020111',
-    'T115_T1X_VS Magnitude': '117967.8984',
-    'T115_T1X_VS Angle': '-170.918472',
-    'T115_T2X_VS Magnitude': '118449.3359',
-    'T115_T2X_VS Angle': '177.662476',
-    'L345_3165_IS Magnitude': '227.969467',
-    'L345_3165_IS Angle': '-130.18692',
-    'L345_3619_IS Magnitude': '230.71608',
-    'L345_3619_IS Angle': '-131.470337',
-    'L345_3280_IS Magnitude': '499.884827',
-    'L345_3280_IS Angle': '-155.59758',
-    'L345_3921_IS Magnitude': '501.715912',
-    'L345_3921_IS Angle': '-155.379868',
-    'T115_T1X_IS Magnitude': '2026.089966',
-    'T115_T1X_IS Angle': '-172.05867',
-    'T115_T2X_IS Magnitude': '798.350891',
-    'T115_T2X_IS Angle': '-3.323437'
-  }
+    Phasors: 
+        {
+            B345_BUSA_VS: {
+                mag: '356953.7188',
+                angle: '-179.048752'
+            },
+            B345_BUSB_VS: {
+                mag: '356592.6563',
+                angle: '-179.020111'
+            }
+        }
+    }
   */
