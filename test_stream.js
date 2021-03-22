@@ -1,5 +1,4 @@
 const AWS = require('aws-sdk');
-// const csv = require('csvtojson');
 const csvFilePath = './ex.csv';
 
 AWS.config.update(
@@ -16,90 +15,63 @@ var fileContents = fs.readFileSync(csvFilePath);
 var lines = fileContents.toString().split('\n');
 
 // calculate the sample rate by taking difference b/t timestamp of two consecutive rows 
-// and taking recipricol
+// and take recipricol
 for (var z = 1; z < 3; z++) {
     let row = lines[z].split(',');
     // console.log(getTimeStamp(row[2] + ' ' + row[3]));
     if (z == 1) {
-        // console.log(row[2]);
         time1 = getTimeStamp(row[2] + ' ' + row[3]) 
     } else if (z == 2) {
-        // console.log(row[2]);
         time2 = getTimeStamp(row[2] + ' ' + row[3])
     }
 }
 let israte = 1 / (time2 - time1) * 1000
 let srate = 2 * Math.round(israte / 2)
 
-// loops through last two rows of small sample file
-// adjust conditions when using large sample file
-// see comments at bottom for an example payload to kinesis
-let loop1 = () => {
-    // i = 0
+let loop2 = () => {
     let keys = lines[0].split(",");
     for (var i = 1; i < 3; i++) {
+        console.log(i);
         let row = lines[i].split(',');
         let parameters = {
-            Data: JSON.stringify({
-                ID: row[0],
-                // converting data and time to unix time happens in connector
-                Date: arangeTime(row[2]),
-                Time: row[3],
-                // converting status to gpsLock and error happens on publisher side
-                Status: row[4],
-                // Status returns 0 if gpsLock is on, but for our schema 1 means gpsLock is on, hence the XOR
-                gpsLock: hex2bin(row[4].replace(/\s/g, ""))[13] ^ 1,      
-                error: hex2bin(row[4].replace(/\s/g, ""))[14],
-                Frequency: row[5],
-                // calculating sRate happens on publisher side
-                sRate: srate,
-                dfdt: row[6],
-                Phasors: JSON.stringify({
-                    [keys[7].split(' ')[0]]: {
-                        mag: row[7],
-                        angle: row[8]
-                    },
-                    [keys[9].split(' ')[0]]: {
-                        mag: row[9],
-                        angle: row[10]
-                    },
-                    [keys[11].split(' ')[0]]: {
-                        mag: row[11],
-                        angle: row[12]
-                    },
-                    [keys[13].split(' ')[0]]: {
-                        mag: row[13],
-                        angle: row[14]
-                    },
-                    [keys[15].split(' ')[0]]: {
-                        mag: row[15],
-                        angle: row[16]
-                    },
-                    [keys[17].split(' ')[0]]: {
-                        mag: row[17],
-                        angle: row[18]
-                    },
-                    [keys[19].split(' ')[0]]: {
-                        mag: row[19],
-                        angle: row[20]
-                    },
-                    [keys[21].split(' ')[0]]: {
-                        mag: row[21],
-                        angle: row[22]
-                    },
-                    [keys[23].split(' ')[0]]: {
-                        mag: row[23],
-                        angle: row[24]
-                    },
-                    [keys[25].split(' ')[0]]: {
-                        mag: row[25],
-                        angle: row[26]
-                    }
-                })
-            }), 
+            Data: {
+                "pmuID": row[0],
+                "ts": getTimeStamp(row[2] + ' ' + row[3]),
+                "status": '00 00',
+                "gpsLock": hex2bin(row[4].replace(/\s/g, ""))[13] ^ 1,      // Status returns 0 if gpsLock is on, but for our schema 1 means gpsLock is on, hence the XOR
+                "sRate": srate,
+                "error": hex2bin(row[4].replace(/\s/g, ""))[14],
+                "frequency": row[5],
+                "dfdt": row[6]
+            },
             PartitionKey: "key" + toString(i),
-            StreamName: "teststream"
+            StreamName: "teststream",
         }
+        // first 7 columns of data are not phasors
+        // create Phasors object, loop through CSV and attach Phasor Names to magnitude and angle
+        // add data to Phasors object
+        let Phasors = {};
+        for (var j = 0; j < (row.length - 7); j += 2) {
+            Object.defineProperty(Phasors, [keys[j + 7].split(' ')[0]], {
+                value: {"mag": Number(row[j + 7]), "angle": Number(row[j+8])},
+                writable: true,
+                enumerable: true,
+                configurable: true
+            });
+        }
+        // convert phasors object to string (Kinesis requirement)
+        Phasors = JSON.stringify(Phasors)
+
+        // add phasors object / string to Kinesis data payload
+        Object.defineProperty(parameters.Data, "phasors", {
+            value: Phasors,
+            writeable: true,
+            enumerable: true,
+            configurable: true
+            });
+
+        // convert data payload to string (Kinesis requirement)
+        parameters.Data = JSON.stringify(parameters.Data)
         kinesis.putRecord(parameters, function(err, data) {
             if (err) {
                 console.log('\n WARNING: Could not add record \n');
@@ -113,31 +85,7 @@ let loop1 = () => {
     }
 }
 
-// used for calculating sample rate, used date and time and returns unix time
-function getTimeStamp(input) {
-    var parts = input.trim().split(' ');
-    var date = parts[0].split('/');
-    var time = parts[1].split(':');
-    var ms = parts[1].split('.');
-    // NOTE:: Month: 0 = January - 11 = December.
-    var d = new Date(date[2],date[0]-1,date[1],time[0],time[1],time[2],ms[1]);
-    return d.getTime();
-}
-
-// formats date properly to be processed in connector
-function arangeTime(input) {
-    // ex: 1/7/2021 to 2021-01-07
-    var parts = input.trim().split('/');
-    var month = null;
-    var day = null;
-    if (parts[0].length != 2) {
-        month = '0'.concat(parts[0]);
-    }
-    if (parts[1].length != 2) {
-        day = '0'.concat(parts[1]);
-    }
-    return parts[2].concat("-",month,"-",day)
-}
+// below are helper functions for processing data: 
 
 // converts hex of status to 16 bit binary string for proper processing
 function hex2bin(hex){
@@ -148,8 +96,26 @@ function hex2bin(hex){
     }
     return binStr
 }
+// take date and time and return timestamp in unix time (ms)
+function getTimeStamp(input) {
+    var parts = input.trim().split(' ');
+    var date = parts[0].split('/');
+    var time = parts[1].split(':');
+    var ms = parts[1].split('.');
+    // NOTE:: Month: 0 = January - 11 = December.
+    var d = new Date(date[2],date[0]-1,date[1],time[0],time[1],time[2],ms[1]);
+    return d.getTime();
+}
 
-loop1();
+// run the script
+
+loop2();
+
+
+
+
+
+
 
 // The digits in the status column are HEX numbers. Each “0” is corresponding to four binary “0”. 
 // In other words, the number of attributes are not only 5. There are 16 attributes according to the protocol standard IEEE C37.118-2005
@@ -189,6 +155,7 @@ loop1();
     error: 1/0,
     Frequency: '59.998001',
     'df/dt': '0',
+    sRate: 30,
     Phasors: 
         {
             B345_BUSA_VS: {
@@ -202,3 +169,119 @@ loop1();
         }
     }
   */
+
+    /*
+{
+    ID: '99999',
+    TS; 27283238923,
+    Status: '00 00',
+    sRate: 30,
+    B345_BUSA_VS Mag: {'356953.7188', df/dt, Frequency},
+    B345_BUSA_VS Angle: {'-179.048752', df/dt, Frequency}
+}
+  */
+
+
+// // formats date properly to be processed in connector
+// function arangeTime(input) {
+//     // ex: 1/7/2021 to 2021-01-07
+//     var parts = input.trim().split('/');
+//     var month = null;
+//     var day = null;
+//     if (parts[0].length != 2) {
+//         month = '0'.concat(parts[0]);
+//     }
+//     if (parts[1].length != 2) {
+//         day = '0'.concat(parts[1]);
+//     }
+//     return parts[2].concat("-",month,"-",day)
+// }
+
+
+
+// loop1();
+
+
+
+
+// loops through last two rows of small sample file
+// adjust conditions when using large sample file
+// see comments at bottom for an example payload to kinesis
+// let loop1 = () => {
+//     // i = 0
+//     let keys = lines[0].split(",");
+//     for (var i = 1; i < 3; i++) {
+//         let row = lines[i].split(',');
+//         let parameters = {
+//             Data: JSON.stringify({
+//                 ID: row[0],
+//                 // converting data and time to unix time happens in connector
+//                 Date: arangeTime(row[2]),
+//                 Time: row[3],
+//                 // converting status to gpsLock and error happens on publisher side
+//                 Status: row[4],
+//                 // Status returns 0 if gpsLock is on, but for our schema 1 means gpsLock is on, hence the XOR
+//                 gpsLock: hex2bin(row[4].replace(/\s/g, ""))[13] ^ 1,      
+//                 error: hex2bin(row[4].replace(/\s/g, ""))[14],
+//                 Frequency: row[5],
+//                 // calculating sRate happens on publisher side
+//                 sRate: srate,
+//                 dfdt: row[6],
+//                 Phasors: JSON.stringify({
+//                     [keys[7].split(' ')[0]]: {
+//                         mag: row[7],
+//                         angle: row[8]
+//                     },
+//                     [keys[9].split(' ')[0]]: {
+//                         mag: row[9],
+//                         angle: row[10]
+//                     },
+//                     [keys[11].split(' ')[0]]: {
+//                         mag: row[11],
+//                         angle: row[12]
+//                     },
+//                     [keys[13].split(' ')[0]]: {
+//                         mag: row[13],
+//                         angle: row[14]
+//                     },
+//                     [keys[15].split(' ')[0]]: {
+//                         mag: row[15],
+//                         angle: row[16]
+//                     },
+//                     [keys[17].split(' ')[0]]: {
+//                         mag: row[17],
+//                         angle: row[18]
+//                     },
+//                     [keys[19].split(' ')[0]]: {
+//                         mag: row[19],
+//                         angle: row[20]
+//                     },
+//                     [keys[21].split(' ')[0]]: {
+//                         mag: row[21],
+//                         angle: row[22]
+//                     },
+//                     [keys[23].split(' ')[0]]: {
+//                         mag: row[23],
+//                         angle: row[24]
+//                     },
+//                     [keys[25].split(' ')[0]]: {
+//                         mag: row[25],
+//                         angle: row[26]
+//                     }
+//                 })
+//             }), 
+//             PartitionKey: "key" + toString(i),
+//             StreamName: "teststream"
+//         }
+//         kinesis.putRecord(parameters, function(err, data) {
+//             if (err) {
+//                 console.log('\n WARNING: Could not add record \n');
+//                 console.log(err, err.stack); // an error occurred
+//             }
+//             else {  
+//                 console.log('\n Record with following data added to stream: \n');  
+//                 console.log(data);           // successful response
+//             }
+//         });
+//     }
+// }
