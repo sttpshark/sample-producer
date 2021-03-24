@@ -1,5 +1,4 @@
 const AWS = require('aws-sdk');
-const csvFilePath = './ex.csv';
 
 AWS.config.update(
     {
@@ -7,53 +6,44 @@ AWS.config.update(
     }
 );
 
-var fs = require('fs');
 let kinesis = new AWS.Kinesis()
 
-// read csv file using fs and go through file line by line
-var fileContents = fs.readFileSync(csvFilePath);
-var lines = fileContents.toString().split('\n');
 
-// calculate the sample rate by taking difference b/t timestamp of two consecutive rows 
-// and take recipricol
-for (var z = 1; z < 3; z++) {
-    let row = lines[z].split(',');
-    // console.log(getTimeStamp(row[2] + ' ' + row[3]));
-    if (z == 1) {
-        time1 = getTimeStamp(row[2] + ' ' + row[3]) 
-    } else if (z == 2) {
-        time2 = getTimeStamp(row[2] + ' ' + row[3])
-    }
-}
-let israte = 1 / (time2 - time1) * 1000
-let srate = 2 * Math.round(israte / 2)
+const stdin = process.stdin;
+let data = new Array();
 
-let loop2 = () => {
-    let keys = lines[0].split(",");
-    for (var i = 1; i < 3; i++) {
-        console.log(i);
-        let row = lines[i].split(',');
+stdin.setEncoding('utf8');
+stdin.on('data', function (chunk) {
+    chunk = chunk.replace(/(\r\n|\n|\r)/gm, " ");
+    let xyz = chunk.split(' ');
+    data.push(xyz);
+});
+
+stdin.on('end', function () {
+    console.log(data)
+    let arr = data[0]
         let parameters = {
             Data: {
-                "pmuID": row[0],
-                "ts": getTimeStamp(row[2] + ' ' + row[3]),
-                "status": '00 00',
-                "gpsLock": hex2bin(row[4].replace(/\s/g, ""))[13] ^ 1,      // Status returns 0 if gpsLock is on, but for our schema 1 means gpsLock is on, hence the XOR
-                "sRate": srate,
-                "error": hex2bin(row[4].replace(/\s/g, ""))[14],
-                "frequency": row[5],
-                "dfdt": row[6]
+                "pmuID": arr[0],
+                "ts": arr[1],
+                "status": arr[2],
+                "gpsLock": hex2bin(arr[2].replace(/\s/g, ""))[13] ^ 1,      // Status returns 0 if gpsLock is on, but for our schema 1 means gpsLock is on, hence the XOR
+                "sRate": arr[3],
+                "error": hex2bin(arr[2].replace(/\s/g, ""))[14],
+                "frequency": arr[4],
+                "dfdt": arr[5]
             },
-            PartitionKey: "key" + toString(i),
+            PartitionKey: "key" + 1,
             StreamName: "teststream",
         }
         // first 7 columns of data are not phasors
         // create Phasors object, loop through CSV and attach Phasor Names to magnitude and angle
         // add data to Phasors object
         let Phasors = {};
-        for (var j = 0; j < (row.length - 7); j += 2) {
-            Object.defineProperty(Phasors, [keys[j + 7].split(' ')[0]], {
-                value: {"mag": Number(row[j + 7]), "angle": Number(row[j+8])},
+        console.log(arr.length)
+        for (var j = 6; j < arr.length - 1; j += 3) {
+            Object.defineProperty(Phasors, arr[j], {
+                value: {"mag": arr[j+2], "angle": arr[j+1]},
                 writable: true,
                 enumerable: true,
                 configurable: true
@@ -82,12 +72,12 @@ let loop2 = () => {
                 console.log(data);           // successful response
             }
         });
-    }
-}
+});
 
-// below are helper functions for processing data: 
+stdin.on('error', console.error);
 
-// converts hex of status to 16 bit binary string for proper processing
+// helper functions:
+
 function hex2bin(hex){
     let binStr = hex.toString(2);
 
@@ -96,20 +86,121 @@ function hex2bin(hex){
     }
     return binStr
 }
-// take date and time and return timestamp in unix time (ms)
-function getTimeStamp(input) {
-    var parts = input.trim().split(' ');
-    var date = parts[0].split('/');
-    var time = parts[1].split(':');
-    var ms = parts[1].split('.');
-    // NOTE:: Month: 0 = January - 11 = December.
-    var d = new Date(date[2],date[0]-1,date[1],time[0],time[1],time[2],ms[1]);
-    return d.getTime();
-}
 
-// run the script
 
-loop2();
+
+// const AWS = require('aws-sdk');
+// const csvFilePath = './ex.csv';
+
+// AWS.config.update(
+//     {
+//         region: "us-east-1"
+//     }
+// );
+
+// var fs = require('fs');
+// let kinesis = new AWS.Kinesis()
+
+// // read csv file using fs and go through file line by line
+// var fileContents = fs.readFileSync(csvFilePath);
+// var lines = fileContents.toString().split('\n');
+
+// // calculate the sample rate by taking difference b/t timestamp of two consecutive rows 
+// // and take recipricol
+// for (var z = 1; z < 3; z++) {
+//     let row = lines[z].split(',');
+//     // console.log(getTimeStamp(row[2] + ' ' + row[3]));
+//     if (z == 1) {
+//         time1 = getTimeStamp(row[2] + ' ' + row[3]) 
+//     } else if (z == 2) {
+//         time2 = getTimeStamp(row[2] + ' ' + row[3])
+//     }
+// }
+// let israte = 1 / (time2 - time1) * 1000
+// let srate = 2 * Math.round(israte / 2)
+
+// let loop2 = () => {
+//     let keys = lines[0].split(",");
+//     for (var i = 1; i < 3; i++) {
+//         console.log(i);
+//         let row = lines[i].split(',');
+//         let parameters = {
+//             Data: {
+//                 "pmuID": row[0],
+//                 "ts": getTimeStamp(row[2] + ' ' + row[3]),
+//                 "status": '00 00',
+//                 "gpsLock": hex2bin(row[4].replace(/\s/g, ""))[13] ^ 1,      // Status returns 0 if gpsLock is on, but for our schema 1 means gpsLock is on, hence the XOR
+//                 "sRate": srate,
+//                 "error": hex2bin(row[4].replace(/\s/g, ""))[14],
+//                 "frequency": row[5],
+//                 "dfdt": row[6]
+//             },
+//             PartitionKey: "key" + toString(i),
+//             StreamName: "teststream",
+//         }
+//         // first 7 columns of data are not phasors
+//         // create Phasors object, loop through CSV and attach Phasor Names to magnitude and angle
+//         // add data to Phasors object
+//         let Phasors = {};
+//         for (var j = 0; j < (row.length - 7); j += 2) {
+//             Object.defineProperty(Phasors, [keys[j + 7].split(' ')[0]], {
+//                 value: {"mag": Number(row[j + 7]), "angle": Number(row[j+8])},
+//                 writable: true,
+//                 enumerable: true,
+//                 configurable: true
+//             });
+//         }
+//         // convert phasors object to string (Kinesis requirement)
+//         Phasors = JSON.stringify(Phasors)
+
+//         // add phasors object / string to Kinesis data payload
+//         Object.defineProperty(parameters.Data, "phasors", {
+//             value: Phasors,
+//             writeable: true,
+//             enumerable: true,
+//             configurable: true
+//             });
+
+//         // convert data payload to string (Kinesis requirement)
+//         parameters.Data = JSON.stringify(parameters.Data)
+//         kinesis.putRecord(parameters, function(err, data) {
+//             if (err) {
+//                 console.log('\n WARNING: Could not add record \n');
+//                 console.log(err, err.stack); // an error occurred
+//             }
+//             else {  
+//                 console.log('\n Record with following data added to stream: \n');  
+//                 console.log(data);           // successful response
+//             }
+//         });
+//     }
+// }
+
+// // below are helper functions for processing data: 
+
+// // converts hex of status to 16 bit binary string for proper processing
+// function hex2bin(hex){
+//     let binStr = hex.toString(2);
+
+//     while(binStr.length < 16) {
+//         binStr = "0" + binStr;
+//     }
+//     return binStr
+// }
+// // take date and time and return timestamp in unix time (ms)
+// function getTimeStamp(input) {
+//     var parts = input.trim().split(' ');
+//     var date = parts[0].split('/');
+//     var time = parts[1].split(':');
+//     var ms = parts[1].split('.');
+//     // NOTE:: Month: 0 = January - 11 = December.
+//     var d = new Date(date[2],date[0]-1,date[1],time[0],time[1],time[2],ms[1]);
+//     return d.getTime();
+// }
+
+// // run the script
+
+// loop2();
 
 
 
