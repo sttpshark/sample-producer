@@ -1,4 +1,7 @@
 const AWS = require('aws-sdk');
+const lineReader = require('line-reader');
+var readline = require('readline');
+const fs = require('fs');
 
 AWS.config.update(
     {
@@ -8,30 +11,22 @@ AWS.config.update(
 
 let kinesis = new AWS.Kinesis()
 
-
-const stdin = process.stdin;
-let data = new Array();
-
-stdin.setEncoding('utf8');
-stdin.on('data', function (chunk) {
-    chunk = chunk.replace(/(\r\n|\n|\r)/gm, " ");
-    let xyz = chunk.split(' ');
-    data.push(xyz);
-});
-
-stdin.on('end', function () {
-    console.log(data)
-    let arr = data[0]
+let arr = new Array();
+lineReader.eachLine(process.stdin, function(line) {
+    arr.push(line);
+    if (line.includes(' ')) {
+        if (arr.length > 8) {
+        console.log(arr);
         let parameters = {
             Data: {
-                "pmuID": arr[0],
-                "ts": arr[1],
-                "status": arr[2],
-                "gpsLock": hex2bin(arr[2].replace(/\s/g, ""))[13] ^ 1,      // Status returns 0 if gpsLock is on, but for our schema 1 means gpsLock is on, hence the XOR
-                "sRate": arr[3],
-                "error": hex2bin(arr[2].replace(/\s/g, ""))[14],
-                "frequency": arr[4],
-                "dfdt": arr[5]
+                "pmuID": arr[1],
+                "ts": arr[2],
+                "status": arr[3],
+                "gpsLock": hex2bin(arr[3].replace(/\s/g, ""))[13] ^ 1,      // Status returns 0 if gpsLock is on, but for our schema 1 means gpsLock is on, hence the XOR
+                "sRate": arr[4],
+                "error": hex2bin(arr[3].replace(/\s/g, ""))[14],
+                "frequency": arr[5],
+                "dfdt": arr[6]
             },
             PartitionKey: "key" + 1,
             StreamName: "teststream",
@@ -40,8 +35,8 @@ stdin.on('end', function () {
         // create Phasors object, loop through CSV and attach Phasor Names to magnitude and angle
         // add data to Phasors object
         let Phasors = {};
-        console.log(arr.length)
-        for (var j = 6; j < arr.length - 1; j += 3) {
+        // console.log(arr.length)
+        for (var j = 7; j < arr.length - 1; j += 3) {
             Object.defineProperty(Phasors, arr[j], {
                 value: {"mag": arr[j+2], "angle": arr[j+1]},
                 writable: true,
@@ -71,10 +66,12 @@ stdin.on('end', function () {
                 console.log('\n Record with following data added to stream: \n');  
                 console.log(data);           // successful response
             }
-        });
+        })
+    }
+    arr = [];
+    // return false
+    }
 });
-
-stdin.on('error', console.error);
 
 // helper functions:
 
@@ -86,6 +83,86 @@ function hex2bin(hex){
     }
     return binStr
 }
+
+// const stdin = process.stdin;
+// let data = new Array();
+
+// stdin.setEncoding('utf8');
+// stdin.on('data', function (chunk) {
+//     chunk = chunk.replace(/(\r\n|\n|\r)/gm, " ");
+//     let xyz = chunk.split(' ');
+//     data.push(xyz);
+
+// });
+
+// stdin.on('end', function () {
+//     console.log(data)
+//     let arr = data[0]
+//         let parameters = {
+//             Data: {
+//                 "pmuID": arr[0],
+//                 "ts": arr[1],
+//                 "status": arr[2],
+//                 "gpsLock": hex2bin(arr[2].replace(/\s/g, ""))[13] ^ 1,      // Status returns 0 if gpsLock is on, but for our schema 1 means gpsLock is on, hence the XOR
+//                 "sRate": arr[3],
+//                 "error": hex2bin(arr[2].replace(/\s/g, ""))[14],
+//                 "frequency": arr[4],
+//                 "dfdt": arr[5]
+//             },
+//             PartitionKey: "key" + 1,
+//             StreamName: "teststream",
+//         }
+//         // first 7 columns of data are not phasors
+//         // create Phasors object, loop through CSV and attach Phasor Names to magnitude and angle
+//         // add data to Phasors object
+//         let Phasors = {};
+//         // console.log(arr.length)
+//         for (var j = 6; j < arr.length - 1; j += 3) {
+//             Object.defineProperty(Phasors, arr[j], {
+//                 value: {"mag": arr[j+2], "angle": arr[j+1]},
+//                 writable: true,
+//                 enumerable: true,
+//                 configurable: true
+//             });
+//         }
+//         // convert phasors object to string (Kinesis requirement)
+//         Phasors = JSON.stringify(Phasors)
+
+//         // add phasors object / string to Kinesis data payload
+//         Object.defineProperty(parameters.Data, "phasors", {
+//             value: Phasors,
+//             writeable: true,
+//             enumerable: true,
+//             configurable: true
+//             });
+
+//         // convert data payload to string (Kinesis requirement)
+//         parameters.Data = JSON.stringify(parameters.Data)
+//         kinesis.putRecord(parameters, function(err, data) {
+//             if (err) {
+//                 console.log('\n WARNING: Could not add record \n');
+//                 console.log(err, err.stack); // an error occurred
+//             }
+//             else {  
+//                 console.log('\n Record with following data added to stream: \n');  
+//                 console.log(data);           // successful response
+//             }
+//         });
+// });
+
+// stdin.on('error', console.error);
+
+
+// // helper functions:
+
+// function hex2bin(hex){
+//     let binStr = hex.toString(2);
+
+//     while(binStr.length < 16) {
+//         binStr = "0" + binStr;
+//     }
+//     return binStr
+// }
 
 
 
